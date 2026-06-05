@@ -239,6 +239,35 @@ export function getCompletedStepIds(outputDir: string): string[] {
 }
 
 /**
+ * 计算 resume 时应跳过的 step id 集合（纯函数，便于测试）。
+ * - 无 fromStep：跳过上次所有已完成的步骤（继续没跑完的部分）。
+ * - 有 fromStep：只跳过 fromStep 所在 DAG 层级**之前**且已完成的步骤，
+ *   fromStep 本层及其下游全部重跑（用上游已恢复的输出）。
+ * @param dag 仅需 levels（拓扑分层），用结构化类型避免耦合完整 DAG
+ * @throws fromStep 不在任何层级时抛错
+ */
+export function computeResumeSkipIds(
+  dag: { levels: string[][] },
+  completedIds: string[],
+  fromStep?: string,
+): Set<string> {
+  if (!fromStep) return new Set(completedIds);
+
+  const fromLevel = dag.levels.findIndex(l => l.includes(fromStep));
+  if (fromLevel < 0) {
+    throw new Error(`--from 指定的步骤 "${fromStep}" 不存在`);
+  }
+  const completed = new Set(completedIds);
+  const skip = new Set<string>();
+  for (let li = 0; li < fromLevel; li++) {
+    for (const id of dag.levels[li]) {
+      if (completed.has(id)) skip.add(id);
+    }
+  }
+  return skip;
+}
+
+/**
  * 查找最近一次运行的输出目录
  */
 export function findLatestOutput(baseDir: string, workflowName?: string): string | null {
@@ -265,6 +294,18 @@ export function printSummary(result: WorkflowResult, outputPath: string, workflo
   console.log('\n\n' + '='.repeat(50));
   console.log(`  ${result.success ? '完成' : '部分失败'}: ${completedSteps}/${result.steps.length} 步 | ${duration}s | ${totalTokens} tokens`);
   console.log(`  详细输出: ${outputPath}`);
+
+  // 成功时也提示可迭代：用户往往不知道能"只重跑某一步"。把命令和可选步骤直接列出来。
+  if (result.success && workflowPath) {
+    const displayPath = relative(process.cwd(), workflowPath) || workflowPath;
+    const stepIds = result.steps.filter(s => s.status === 'completed').map(s => s.id);
+    console.log('');
+    console.log(`  💡 想优化某一步？只重跑它即可（自动复用上游输出）/ Re-run one step:`);
+    console.log(`     ao run ${displayPath} --resume last --from <step-id>`);
+    if (stepIds.length > 0) {
+      console.log(`     可选步骤 / steps: ${stepIds.join(', ')}`);
+    }
+  }
 
   // 失败时显示失败详情和 resume 命令
   if (!result.success && workflowPath) {

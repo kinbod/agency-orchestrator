@@ -15,7 +15,7 @@ export { ClaudeConnector } from './connectors/claude.js';
 export { OllamaConnector } from './connectors/ollama.js';
 export { OpenAICompatibleConnector } from './connectors/openai-compatible.js';
 export { createConnector } from './connectors/factory.js';
-export { saveResults, loadPreviousContext, findLatestOutput } from './output/reporter.js';
+export { saveResults, loadPreviousContext, findLatestOutput, computeResumeSkipIds } from './output/reporter.js';
 export { composeWorkflow, buildRoleCatalog, extractYamlFromResponse } from './cli/compose.js';
 
 export type {
@@ -35,7 +35,7 @@ import { buildDAG, formatDAG } from './core/dag.js';
 import { executeDAG, type ExecutorOptions } from './core/executor.js';
 import { createConnector } from './connectors/factory.js';
 import { loadAgent } from './agents/loader.js';
-import { saveResults, printStepResult, printStepRunning, clearRunningLine, printSummary, loadPreviousContext, getCompletedStepIds, findLatestOutput } from './output/reporter.js';
+import { saveResults, printStepResult, printStepRunning, clearRunningLine, printSummary, loadPreviousContext, getCompletedStepIds, findLatestOutput, computeResumeSkipIds } from './output/reporter.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,8 +64,8 @@ export async function run(
   // 自动解析 agents_dir
   workflow.agents_dir = resolveAgentsDir(workflow.agents_dir, workflowPath);
 
-  // 校验
-  const errors = validateWorkflow(workflow);
+  // 校验（agents_dir 已解析为绝对路径，顺带校验 role 真实存在）
+  const errors = validateWorkflow(workflow, workflow.agents_dir);
   if (errors.length > 0) {
     throw new Error(`工作流校验失败 / Workflow validation failed:\n${errors.map(e => `  - ${e}`).join('\n')}`);
   }
@@ -143,27 +143,7 @@ export async function run(
       }
     }
 
-    if (fromStep) {
-      // --from: 跳过指定步骤之前的所有已完成步骤
-      const completedIds = getCompletedStepIds(resumeDir);
-      skipStepIds = new Set<string>();
-      // 找到 fromStep 所在 level，跳过之前所有 level 中的已完成步骤
-      const fromLevel = dag.levels.findIndex(l => l.includes(fromStep));
-      if (fromLevel < 0) {
-        throw new Error(`--from 指定的步骤 "${fromStep}" 不存在`);
-      }
-      for (let li = 0; li < fromLevel; li++) {
-        for (const id of dag.levels[li]) {
-          if (completedIds.includes(id)) {
-            skipStepIds.add(id);
-          }
-        }
-      }
-    } else {
-      // 无 --from: 跳过所有已完成的步骤
-      const completedIds = getCompletedStepIds(resumeDir);
-      skipStepIds = new Set(completedIds);
-    }
+    skipStepIds = computeResumeSkipIds(dag, getCompletedStepIds(resumeDir), fromStep);
 
     if (!options?.quiet) {
       console.log(`  恢复自: ${resumeDir}`);
@@ -267,7 +247,11 @@ export async function run(
  * 自动查找 agents 目录
  * 优先级：YAML 中指定的路径 → 相对于 workflow 文件 → 常见位置
  */
-function resolveAgentsDir(agentsDir: string, workflowPath: string): string {
+/**
+ * 在常见位置查找角色库目录；找到返回绝对路径，找不到返回 null（不抛错）。
+ * 供 validate/plan 等只读路径做"best-effort role 校验"复用。
+ */
+export function findAgentsDir(agentsDir: string, workflowPath: string): string | null {
   // 1. 如果 YAML 中指定的路径存在，直接用
   const absolute = resolve(agentsDir);
   if (existsSync(absolute)) return absolute;
@@ -295,7 +279,14 @@ function resolveAgentsDir(agentsDir: string, workflowPath: string): string {
   for (const dir of sameNameCandidates) {
     if (existsSync(dir)) return dir;
   }
+  return null;
+}
 
+function resolveAgentsDir(agentsDir: string, workflowPath: string): string {
+  const found = findAgentsDir(agentsDir, workflowPath);
+  if (found) return found;
+
+  const baseName = agentsDir.replace(/[\/\\]+$/, '').split(/[\/\\]/).pop() || agentsDir;
   // 找不到用户指定的目录 → 明确报错（不再静默回退到另一语言版本，
   // 否则英文工作流会在中文角色库上跑，用户得到中文角色名一脸懵）
   const initCmd = baseName === 'agency-agents' ? 'ao init --lang en'
