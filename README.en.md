@@ -9,7 +9,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-**One sentence → full plan · 211 expert AI roles · Zero-code YAML · 10 LLM providers · 7 need no API key**
+**One sentence → full plan · 211 expert AI roles · Zero-code YAML · 10 LLM providers · key supported (DeepSeek recommended), plus 7 key-free options**
 
 > **Note:** `ao compose --run` auto-detects your language. Both 211 Chinese roles and 170+ English roles ([agency-agents](https://github.com/msitarzewski/agency-agents), MIT) are **bundled in the npm package — no extra download needed**. **6 English workflow templates** are ready in `workflows/en/` — more coming in v0.6.
 
@@ -75,10 +75,10 @@ Chatting with one AI gives you one perspective. But any real decision needs prod
 |---|--------|-----------|---------------------|
 | Roles | 1 generalist | Write your own | **211 expert roles** |
 | Usage | Chat | Write Python | **One sentence / YAML** |
-| API key | — | Required | **7 providers need none** |
+| API key | — | Required | **Key supported; 7 key-free options too** |
 | Dependencies | — | pip + dozens of packages | **npm + 2 deps** |
 | Parallelism | — | Manual graph | **Auto DAG detection** |
-| Price | Subscription | Open-source + API fees | **Completely free** |
+| Price | Subscription | Open-source + API fees | **DeepSeek sweet spot is dirt cheap; key-free to start** |
 
 ## Get Started in 3 Steps
 
@@ -201,9 +201,11 @@ analyze ──→ tech_review  ──→ summary
 | ChatGPT Plus ($20/mo) | `provider: "codex-cli"` | `npm i -g @openai/codex` | **$0 extra** |
 | OpenClaw account | `provider: "openclaw-cli"` | `npm i -g openclaw` | **$0 extra** |
 | Hermes Agent (NousResearch open-source 🔥) | `provider: "hermes-cli"` | [Install guide](https://github.com/NousResearch/hermes-agent) | **Free** |
-| A computer | `provider: "ollama"` | [ollama.ai](https://ollama.ai) | **Free** (local models) |
+| A computer | `provider: "ollama"` | [ollama.ai](https://ollama.ai) | **Free** (local models, see note below) |
 
-**Or use traditional API keys:**
+> ⚠️ **Model capability drives the value of multi-agent.** We verified this with a quality eval (see [EVAL_FINDINGS.md](EVAL_FINDINGS.md)): on the **DeepSeek tier (capable yet cheap), multi-agent output clearly beats a single prompt**; but with **weak local models (e.g. llama3 8B), the role hand-offs amplify drift and can do worse than a single call**. For quality, use a capable model (DeepSeek/Claude/Gemini); for local Ollama, prefer 70B+ models.
+
+**Or use traditional API keys (DeepSeek recommended for the price/quality sweet spot):**
 
 | Provider | Config | Env Variable |
 |----------|--------|-------------|
