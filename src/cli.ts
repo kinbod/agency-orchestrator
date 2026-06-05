@@ -50,7 +50,7 @@ async function main(): Promise<void> {
       await handleRun();
       break;
     case 'validate':
-      handleValidate();
+      await handleValidate();
       break;
     case 'plan':
       handlePlan();
@@ -171,7 +171,7 @@ async function handleRun(): Promise<void> {
   }
 }
 
-function handleValidate(): void {
+async function handleValidate(): Promise<void> {
   const filePath = args[1];
   if (!filePath) {
     console.error(t('validate.usage'));
@@ -187,10 +187,8 @@ function handleValidate(): void {
       console.log(`  ${t('validate.ok', { name: workflow.name })}`);
       console.log(`  ${t('validate.stats', { steps: workflow.steps.length, inputs: (workflow.inputs || []).length })}`);
     } else {
-      console.error(`  ${t('validate.failed', { name: workflow.name })}\n`);
-      for (const err of errors) {
-        console.error(`  - ${err}`);
-      }
+      const { formatValidationReport } = await import('./cli/validate-report.js');
+      console.error('\n' + formatValidationReport(workflow.name, errors, workflow.steps.map(s => s.id)));
       process.exit(1);
     }
   } catch (err) {
