@@ -5,6 +5,7 @@ import { executeDAG } from '../src/core/executor.js';
 import { buildDAG } from '../src/core/dag.js';
 import type { WorkflowDefinition, LLMConnector, LLMResult, LLMConfig } from '../src/types.js';
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 
 let passed = 0;
 let failed = 0;
@@ -33,7 +34,14 @@ class MockConnector implements LLMConnector {
   }
 }
 
-const agentsDir = resolve('../agency-agents-zh');
+// 健壮解析：优先 node_modules（CI 与生产用户都有），回退到 sibling/上层 dev 副本。
+// 旧写法 resolve('../agency-agents-zh') 依赖 cwd 上层有 sibling checkout，
+// 本地能过但 CI 里不存在 → loadAgent 失败、chat 0 次调用，使 CI 长期红。
+const agentsDir = [
+  resolve(import.meta.dirname!, '../node_modules/agency-agents-zh'),
+  resolve(import.meta.dirname!, '../agency-agents-zh'),
+  resolve(import.meta.dirname!, '../../agency-agents-zh'),
+].find(d => existsSync(d)) || resolve(import.meta.dirname!, '../../agency-agents-zh');
 
 console.log('\n─── Step 级别 LLM 配置 (Issue #3) ───');
 
