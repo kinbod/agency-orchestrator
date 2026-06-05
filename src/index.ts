@@ -29,6 +29,21 @@ export type {
   StepResult,
   DAGNode,
 } from './types.js';
+import type { InputDefinition } from './types.js';
+
+/**
+ * 计算真正缺失的必填输入：required 且未提供且**无默认值**。
+ * 有 default 的 required 输入不算缺失（默认值会填上），否则像 story-creation 这类带
+ * default 的旗舰模板 `ao run xxx.yaml` 开箱即跑会被误判为缺参。纯函数，便于测试。
+ */
+export function findMissingInputs(
+  inputs: InputDefinition[] | undefined,
+  provided: { has(name: string): boolean },
+): InputDefinition[] {
+  return (inputs || []).filter(
+    def => def.required && !provided.has(def.name) && def.default === undefined
+  );
+}
 
 import { parseWorkflow, validateWorkflow } from './core/parser.js';
 import { buildDAG, formatDAG } from './core/dag.js';
@@ -96,10 +111,8 @@ export async function run(
     }
   }
 
-  // 检查必填输入 + 注入默认值
-  const missingInputs = (workflow.inputs || []).filter(
-    def => def.required && !inputMap.has(def.name)
-  );
+  // 检查必填输入 + 注入默认值。
+  const missingInputs = findMissingInputs(workflow.inputs, inputMap);
   if (missingInputs.length > 0) {
     const names = missingInputs.map(i => i.name).join(', ');
     const lines = [
