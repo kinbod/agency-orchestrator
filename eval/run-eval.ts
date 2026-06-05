@@ -21,7 +21,9 @@ import { createConnector } from '../src/connectors/factory.js';
 import type { LLMConfig, WorkflowResult, InputDefinition } from '../src/types.js';
 
 const PROVIDER = process.env.AO_EVAL_PROVIDER || 'ollama';
-const MODEL = process.env.AO_EVAL_MODEL || 'llama3';
+// CLI 类 provider（claude-code / *-cli）model 留空即用 CLI 默认模型；否则默认 llama3。
+const IS_CLI_PROVIDER = PROVIDER.endsWith('-cli') || PROVIDER === 'claude-code';
+const MODEL = process.env.AO_EVAL_MODEL || (IS_CLI_PROVIDER ? '' : 'llama3');
 const llm: LLMConfig = { provider: PROVIDER, model: MODEL, max_tokens: 2048, timeout: 600_000 };
 
 const JUDGE_TRUNC = 3500; // 每份产出喂给 judge 前截断，避免超 judge 上下文
