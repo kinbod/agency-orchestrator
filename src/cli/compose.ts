@@ -4,7 +4,7 @@
  * 用户用一句话描述需求，AI 从角色库中选角色、设计 DAG、生成完整 workflow YAML。
  * 支持中文（agency-agents-zh）和英文（agency-agents）角色库。
  */
-import { listAgents } from '../agents/loader.js';
+import { listAgents, suggestFromPaths } from '../agents/loader.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, relative } from 'node:path';
 import { createConnector } from '../connectors/factory.js';
@@ -349,14 +349,24 @@ export async function composeWorkflow(options: {
   lang?: 'zh' | 'en';
   /** 生成的 YAML 中写入的单步超时（ms）；未指定时 API=300s / ollama=600s */
   timeoutMs?: number;
+  /** 锁定阵容：只用这些角色路径（如 "engineering/xxx"），LLM 仅在其间编排 DAG/task/变量 */
+  pinnedRoles?: string[];
+  /** 保存目录；默认 workflows/。用于把合成结果写到用户目录而非随包模板目录 */
+  saveDir?: string;
 }): Promise<{ yaml: string; savedPath: string; relativePath: string; warnings: string[] }> {
   const { description, agentsDir, llmConfig } = options;
   const lang = options.lang ?? detectLang(description);
 
   // 1. 构建角色目录
-  const roles = buildRoleCatalog(agentsDir);
+  let roles = buildRoleCatalog(agentsDir);
   if (roles.length === 0) {
     throw new Error(t('compose.empty_catalog', { dir: agentsDir }));
+  }
+  // 锁定阵容：把目录收窄到勾选的角色，LLM 既无法幻觉别的角色，也被强制用上这些
+  if (options.pinnedRoles?.length) {
+    const pin = new Set(options.pinnedRoles);
+    const filtered = roles.filter(r => pin.has(r.path));
+    if (filtered.length > 0) roles = filtered;
   }
   const catalog = formatCatalogForPrompt(roles);
 
@@ -368,7 +378,13 @@ export async function composeWorkflow(options: {
     lang,
     timeoutMs: options.timeoutMs,
   });
-  const userPrompt = buildComposeUserPrompt(description, lang);
+  let userPrompt = buildComposeUserPrompt(description, lang);
+  if (options.pinnedRoles?.length) {
+    const names = roles.map(r => `${r.path}（${r.name}）`).join(lang === 'en' ? ', ' : '、');
+    userPrompt += lang === 'en'
+      ? `\n\nYou MUST build the workflow using EXACTLY these roles, every one of them and no others: ${names}. Design the DAG dependencies, task descriptions and variable chaining among them.`
+      : `\n\n必须且只能使用以下全部角色（每个都要用上，不要引入其他角色）：${names}。在它们之间设计 DAG 依赖、task 描述和变量串联。`;
+  }
 
   // 3. 调用 LLM
   console.log(`  ${t('compose.generating', { n: roles.length })}\n`);
@@ -386,7 +402,7 @@ export async function composeWorkflow(options: {
   }
 
   // 5. 保存（避免覆盖）
-  const workflowsDir = resolve('workflows');
+  const workflowsDir = options.saveDir ? resolve(options.saveDir) : resolve('workflows');
   if (!existsSync(workflowsDir)) {
     mkdirSync(workflowsDir, { recursive: true });
   }
@@ -430,9 +446,22 @@ export async function composeWorkflow(options: {
   // 发现幻觉角色 → 让 LLM 修一次
   if (first.invalidRoles.length > 0) {
     console.log(`  检测到 ${first.invalidRoles.length} 个不存在的角色，自动重新生成...`);
+    // 把"你是不是想用 X"喂回 LLM：从实际提供的目录里找最接近的真实角色，
+    // 让模型做定向替换而非盲目重生成，显著提高一次修复成功率
+    const catalogPaths = [...validRolePaths];
+    const corrections = first.invalidRoles.map(bad => {
+      const hit = suggestFromPaths(bad, catalogPaths);
+      return { bad, suggestion: hit[0] };
+    });
+    const mapLine = (sep: string) => corrections
+      .map(c => c.suggestion ? `${c.bad} → ${c.suggestion}` : c.bad)
+      .join(sep);
     const retryPrompt = lang === 'en'
-      ? `The following role paths in your previous YAML do NOT exist in the catalog: ${first.invalidRoles.join(', ')}.\n\nRegenerate the FULL YAML. Use ONLY role paths from the catalog above. Do not invent new paths.`
-      : `你上次生成的 YAML 里有不存在的 role 路径：${first.invalidRoles.join('、')}。\n\n请重新生成完整 YAML，role 必须严格使用上方角色目录中列出的路径，不要编造。`;
+      ? `The following role paths in your previous YAML do NOT exist in the catalog (→ shows the closest valid path):\n${corrections.map(c => `  - ${c.bad}${c.suggestion ? ` → use "${c.suggestion}" instead` : ''}`).join('\n')}\n\nRegenerate the FULL YAML, replacing each wrong path with the suggested one. Use ONLY role paths from the catalog above. Do not invent new paths.`
+      : `你上次生成的 YAML 里有不存在的 role 路径（→ 后是目录中最接近的正确路径）：\n${corrections.map(c => `  - ${c.bad}${c.suggestion ? ` → 请改用 "${c.suggestion}"` : ''}`).join('\n')}\n\n请重新生成完整 YAML，把每个错误路径替换为建议的正确路径。role 必须严格使用上方角色目录中列出的路径，不要编造。`;
+    if (corrections.some(c => c.suggestion)) {
+      console.log(`  建议替换: ${mapLine('，')}`);
+    }
     try {
       const retryResult = await connector.chat(systemPrompt, `${userPrompt}\n\n${retryPrompt}`, {
         ...llmConfig,
