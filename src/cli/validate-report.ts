@@ -77,6 +77,27 @@ export function classifyErrors(errors: string[]): ValidationFinding[] {
   return errors.map(classifyError);
 }
 
+export interface ValidationReport {
+  valid: boolean;
+  name: string;
+  steps: number;
+  inputs: number;
+  findings: ValidationFinding[];
+}
+
+/** 构造 --json 输出对象（纯函数，便于测试） */
+export function buildValidationReport(
+  name: string, stepCount: number, inputCount: number, errors: string[],
+): ValidationReport {
+  return {
+    valid: errors.length === 0,
+    name,
+    steps: stepCount,
+    inputs: inputCount,
+    findings: classifyErrors(errors),
+  };
+}
+
 function byCategory(a: ValidationFinding, b: ValidationFinding): number {
   return CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category);
 }

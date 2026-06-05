@@ -2,7 +2,7 @@
  * validate 报告美化测试（纯函数：classifyError / formatValidationReport）
  * 用与 parser.ts 完全一致的错误字符串作输入，确保分类/分组/排序/清洗正确。
  */
-import { classifyError, classifyErrors, formatValidationReport } from '../src/cli/validate-report.js';
+import { classifyError, classifyErrors, formatValidationReport, buildValidationReport } from '../src/cli/validate-report.js';
 
 let passed = 0, failed = 0;
 function test(name: string, fn: () => void): void {
@@ -94,6 +94,26 @@ test('未在 stepOrder 中的 step 也会被渲染', () => {
 
 test('classifyErrors 批量长度一致', () => {
   assert(classifyErrors(sample).length === sample.length, '长度应一致');
+});
+
+console.log('\n=== buildValidationReport (--json) ===');
+
+test('无错误 → valid:true, findings 空', () => {
+  const r = buildValidationReport('WF', 3, 1, []);
+  assert(r.valid === true && r.findings.length === 0, JSON.stringify(r));
+  assert(r.steps === 3 && r.inputs === 1 && r.name === 'WF', JSON.stringify(r));
+});
+
+test('有错误 → valid:false, findings 结构化', () => {
+  const r = buildValidationReport('WF', 2, 0, ['step "a" 引用了未定义的变量: {{v}}']);
+  assert(r.valid === false && r.findings.length === 1, JSON.stringify(r));
+  assert(r.findings[0].category === 'variable' && r.findings[0].stepId === 'a', JSON.stringify(r.findings[0]));
+});
+
+test('报告对象可被 JSON 序列化且往返一致', () => {
+  const r = buildValidationReport('WF', 1, 0, ['step "z" 依赖不存在的 step: "q"']);
+  const round = JSON.parse(JSON.stringify(r));
+  assert(round.findings[0].category === 'dependency', JSON.stringify(round));
 });
 
 console.log('\n' + '='.repeat(50));

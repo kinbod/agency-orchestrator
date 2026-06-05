@@ -17,7 +17,7 @@ import type { LLMConfig } from './types.js';
 import { buildDAG, formatDAG } from './core/dag.js';
 import { listAgents } from './agents/loader.js';
 import { run, findAgentsDir } from './index.js';
-import { formatValidationReport } from './cli/validate-report.js';
+import { formatValidationReport, buildValidationReport } from './cli/validate-report.js';
 import { scheduleUpdateCheck, fetchLatestVersion, isNewer, detectUpgradeCommand, PKG } from './utils/version-check.js';
 import { t, detectLang } from './i18n.js';
 import { loadEnvFile, writeEnvFile, ensureEnvGitignored } from './utils/env-loader.js';
@@ -174,8 +174,10 @@ async function handleRun(): Promise<void> {
 
 function handleValidate(): void {
   const filePath = args[1];
+  const asJson = args.includes('--json');
   if (!filePath) {
-    console.error(t('validate.usage'));
+    if (asJson) console.log(JSON.stringify({ valid: false, error: 'missing workflow path' }));
+    else console.error(t('validate.usage'));
     process.exit(1);
   }
 
@@ -183,6 +185,15 @@ function handleValidate(): void {
     const workflow = parseWorkflow(resolve(filePath));
     const agentsDir = findAgentsDir(workflow.agents_dir, resolve(filePath)) ?? undefined;
     const errors = validateWorkflow(workflow, agentsDir);
+
+    // --json：结构化输出，供 CI / 编辑器集成消费（stdout 纯 JSON，退出码标识结果）
+    if (asJson) {
+      const report = buildValidationReport(
+        workflow.name, workflow.steps.length, (workflow.inputs || []).length, errors);
+      console.log(JSON.stringify(report, null, 2));
+      if (!report.valid) process.exit(1);
+      return;
+    }
 
     if (errors.length === 0) {
       console.log(`  ${t('validate.ok', { name: workflow.name })}`);
@@ -192,7 +203,10 @@ function handleValidate(): void {
       process.exit(1);
     }
   } catch (err) {
-    console.error(`${t('error.prefix')}: ${err instanceof Error ? err.message : err}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    // 解析失败（YAML 语法、缺 role/task 等 throw）也走 JSON，保证 --json 永远输出合法 JSON
+    if (asJson) console.log(JSON.stringify({ valid: false, error: msg }, null, 2));
+    else console.error(`${t('error.prefix')}: ${msg}`);
     process.exit(1);
   }
 }

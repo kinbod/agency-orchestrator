@@ -200,7 +200,7 @@ const dict: Dict = {
     compose "描述" --run              生成并立即运行（一句话出结果）
     serve                             启动 MCP Server（供 Claude Code / Cursor 调用）
     run <workflow.yaml>               执行工作流
-    validate <workflow.yaml>          校验工作流定义
+    validate <workflow.yaml>          校验工作流定义（加 --json 输出结构化结果）
     plan <workflow.yaml>              查看执行计划
     explain <workflow.yaml>           用自然语言解释执行计划
     roles [--agents-dir path]         列出可用角色
@@ -255,7 +255,7 @@ const dict: Dict = {
     compose "desc" --run              Compose and run immediately
     serve                             Start MCP server (for Claude Code / Cursor)
     run <workflow.yaml>               Execute a workflow
-    validate <workflow.yaml>          Validate a workflow definition
+    validate <workflow.yaml>          Validate a workflow definition (--json for structured output)
     plan <workflow.yaml>              Show execution plan
     explain <workflow.yaml>           Explain the plan in natural language
     roles [--agents-dir path]         List available roles
